@@ -69,7 +69,9 @@ class Repository:
                 .where(
                     and_(
                         TestResult.user_id == user_id,
-                        TestResult.metric_name.ilike(f"%{metric_name}%"),
+                        TestResult.metric_name.ilike(
+                            f"%{metric_name.replace('%', '').replace('_', '')}%"
+                        ),
                         TestResult.test_date >= since,
                     )
                 )

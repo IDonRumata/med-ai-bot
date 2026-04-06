@@ -6,6 +6,7 @@ from aiogram import Bot
 
 from bot.config import settings
 from bot.database.repository import Repository
+from bot.utils.crypto import decrypt
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,15 @@ async def _daily_health_check(bot: Bot) -> None:
         latest = symptoms[0]
         days_ago = (datetime.utcnow() - latest.logged_at).days
         if days_ago >= 2:
+            try:
+                complaint_preview = decrypt(latest.complaint_text)[:100]
+            except Exception:
+                complaint_preview = "жалоба"
             await bot.send_message(
                 chat_id=user_id,
                 text=(
                     f"👋 Привет! {days_ago} дней назад ты жаловался на:\n"
-                    f"<i>«{latest.complaint_text[:100]}...»</i>\n\n"
+                    f"<i>«{complaint_preview}...»</i>\n\n"
                     f"Как самочувствие сейчас? Напиши или запиши голосовое."
                 ),
             )
