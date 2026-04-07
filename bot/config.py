@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     openai_model_heavy: str = "gpt-4o"
     openai_model_light: str = "gpt-4o-mini"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()
