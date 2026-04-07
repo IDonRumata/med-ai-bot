@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
+    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -175,8 +176,58 @@ async def cmd_addallergy(message: Message) -> None:
     await message.answer(f"✅ Добавлено: <b>{addition}</b>\n\nТекущий список: {new_value}")
 
 
-@router.message(Command("profile"))
 @router.message(F.text == "👤 Профиль")
+async def btn_profile(message: Message) -> None:
+    """Show current profile with Edit button."""
+    from datetime import date as date_type
+    user_id = message.from_user.id
+    profile = await Repository.get_user_profile(user_id)
+
+    edit_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Редактировать профиль", callback_data="edit_profile")]
+    ])
+
+    if not profile or (not profile.get("age") and not profile.get("sex")):
+        await message.answer(
+            "Профиль не заполнен.",
+            reply_markup=edit_kb,
+        )
+        return
+
+    age = profile.get("age", "—")
+    sex = profile.get("sex") or "—"
+    height = profile.get("height_cm")
+    weight = profile.get("weight_kg")
+    dob_iso = profile.get("date_of_birth")
+    dob_str = date_type.fromisoformat(dob_iso).strftime("%d.%m.%Y") if dob_iso else "—"
+
+    bmi_str = ""
+    if height and weight:
+        bmi = weight / (height / 100) ** 2
+        bmi_str = f"\n🔢 ИМТ: {bmi:.1f}"
+
+    await message.answer(
+        f"👤 <b>Профиль</b>\n\n"
+        f"📅 Дата рождения: {dob_str} ({age} лет)\n"
+        f"⚧ Пол: {sex}\n"
+        f"📏 Рост: {f'{height:.0f} см' if height else '—'}\n"
+        f"⚖️ Вес: {f'{weight:.1f} кг' if weight else '—'}"
+        f"{bmi_str}",
+        reply_markup=edit_kb,
+    )
+
+
+@router.callback_query(F.data == "edit_profile")
+async def callback_edit_profile(query: CallbackQuery, state: FSMContext) -> None:
+    await query.answer()
+    await state.set_state(ProfileSetup.dob)
+    await query.message.answer(
+        "Укажи дату рождения в формате ДД.ММ.ГГГГ\n<i>Например: 27.06.1981</i>",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.message(Command("profile"))
 async def cmd_profile(message: Message, state: FSMContext) -> None:
     await state.set_state(ProfileSetup.dob)
     await message.answer(
