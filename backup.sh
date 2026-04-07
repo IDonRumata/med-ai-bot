@@ -63,7 +63,7 @@ fi
 
 # Send backup to Telegram
 if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${ALLOWED_USER_ID:-}" ]]; then
-    CAPTION="🗄 Резервная копия базы данных%0A📅 $(date '+%d.%m.%Y %H:%M')%0A💾 $SIZE"
+    CAPTION="$(printf '🗄 Резервная копия базы данных\n📅 %s\n💾 %s' "$(date '+%d.%m.%Y %H:%M')" "$SIZE")"
     SEND_RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
         -F "chat_id=${ALLOWED_USER_ID}" \
         -F "document=@${BACKUP_FILE}" \
