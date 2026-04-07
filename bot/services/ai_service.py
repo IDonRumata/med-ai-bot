@@ -58,9 +58,11 @@ async def analyze_test_results(
 
     prompt = (
         f"Извлеки из следующего текста лабораторных анализов все показатели. "
-        f"Верни JSON-массив объектов с полями: metric, value (число), unit, ref_min, ref_max, date (YYYY-MM-DD). "
-        f"Если какое-то поле неизвестно, поставь null. "
-        f"После массива дай краткую сводку на русском в поле summary."
+        f"Верни JSON с полями: results (массив объектов metric, value (число), unit, ref_min, ref_max, date (YYYY-MM-DD)), summary (текст). "
+        f"Если поле неизвестно — null. "
+        f"Для поля metric используй короткое стандартное русское название без латыни и дублей: "
+        f"'ТТГ' (не 'Тиреотропный гормон (ТТГ)'), 'АЛТ', 'АСТ', 'Гемоглобин', 'Тестостерон' и т.д. "
+        f"Если показатель дублируется с разным названием — оставь один."
         f"{profile_ctx}"
         f"\n\nТекст анализов:\n{anonymize(extracted_text)}"
     )
@@ -191,7 +193,8 @@ async def analyze_image(image_bytes: bytes, user_profile: dict | None = None) ->
                         "type": "text",
                         "text": (
                             f"Извлеки из этого изображения все лабораторные показатели. "
-                            f"Верни JSON с полями: results (массив {{metric, value, unit, ref_min, ref_max, date}}), summary (текст).{profile_ctx}"
+                            f"Верни JSON: results (массив metric, value, unit, ref_min, ref_max, date), summary. "
+                            f"Для metric используй короткое стандартное русское название: 'ТТГ', 'АЛТ', 'Гемоглобин', 'Тестостерон' — без латыни и дублей.{profile_ctx}"
                         ),
                     },
                     {

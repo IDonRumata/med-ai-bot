@@ -20,13 +20,12 @@ async def cmd_export(message: Message) -> None:
     await message.answer("📋 Формирую отчёт для врача...")
 
     try:
-        profile = await Repository.get_user_profile(user_id)
-        if not profile:
+        profile = await Repository.get_user_profile(user_id) or {}
+        if not profile.get("age") and not profile.get("sex"):
             await message.answer(
-                "Сначала заполни профиль командой /profile "
-                "(возраст, пол, хронические заболевания)."
+                "⚠️ Профиль не заполнен — отчёт будет без персональных данных.\n"
+                "Рекомендую заполнить /profile для лучшего результата."
             )
-            return
 
         symptoms_raw = await Repository.get_recent_symptoms(user_id, days=90)
         symptoms = []

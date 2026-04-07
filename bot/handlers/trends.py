@@ -15,11 +15,15 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+MAX_INLINE_BUTTONS = 30  # Telegram safe limit
+
+
 def _build_metrics_keyboard(metrics: list[str]) -> InlineKeyboardMarkup:
-    """Build inline keyboard with metric buttons (2 per row)."""
+    """Build inline keyboard — max 30 buttons to stay within Telegram limits."""
+    shown = sorted(metrics)[:MAX_INLINE_BUTTONS]
     buttons = [
-        InlineKeyboardButton(text=m, callback_data=f"trend:{m[:50]}")
-        for m in sorted(metrics)
+        InlineKeyboardButton(text=m[:40], callback_data=f"trend:{m[:50]}")
+        for m in shown
     ]
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -37,8 +41,11 @@ async def cmd_trend(message: Message) -> None:
         if not metrics:
             await message.answer("Нет сохранённых показателей. Сначала загрузи анализы.")
             return
+
+        total = len(metrics)
+        hint = f" (показаны первые {MAX_INLINE_BUTTONS} из {total}, для других напиши /trend Название)" if total > MAX_INLINE_BUTTONS else ""
         await message.answer(
-            "Выбери показатель:",
+            f"Выбери показатель:{hint}",
             reply_markup=_build_metrics_keyboard(metrics),
         )
         return
