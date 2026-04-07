@@ -5,8 +5,8 @@ from aiogram import Router, F
 from aiogram.types import Message
 
 from bot.database.repository import Repository
-from bot.services.ai_service import analyze_test_results, analyze_image
-from bot.services.pdf_service import extract_text_from_pdf, get_pdf_page_count
+from bot.services.ai_service import analyze_test_results, analyze_image, analyze_scanned_pdf_pages
+from bot.services.pdf_service import extract_text_from_pdf, get_pdf_page_count, pdf_pages_to_images
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -82,7 +82,20 @@ async def handle_photo(message: Message) -> None:
 
             count = await Repository.save_test_results(message.from_user.id, db_results)
             summary = result.get("summary", "Анализ завершён.")[:2000]
-            await message.answer(f"✅ Сохранено <b>{count}</b> показателей.\n\n{summary}")
+            abnormal = [
+                r for r in db_results
+                if (r.get("ref_max") and r["value"] > r["ref_max"])
+                or (r.get("ref_min") and r["value"] < r["ref_min"])
+            ]
+            abnormal_text = ""
+            if abnormal:
+                lines = "\n".join(
+                    f"• {r['metric']}: {r['value']} {r.get('unit') or ''} "
+                    f"(норма {r.get('ref_min','?')}–{r.get('ref_max','?')})"
+                    for r in abnormal
+                )
+                abnormal_text = f"\n\n⚠️ <b>Вне нормы:</b>\n{lines}"
+            await message.answer(f"✅ Сохранено <b>{count}</b> показателей.{abnormal_text}\n\n{summary}")
         else:
             await message.answer(
                 "Не удалось распознать показатели на фото. "
@@ -121,15 +134,13 @@ async def _handle_pdf(message: Message) -> None:
         text = extract_text_from_pdf(pdf_bytes)
 
         if len(text.strip()) < 20:
-            await message.answer("Документ выглядит как скан, использую распознавание изображений...")
-            import fitz
-            pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            pix = pdf_doc[0].get_pixmap(dpi=200)
-            img_bytes = pix.tobytes("png")
-            pdf_doc.close()
-
+            pages = pdf_pages_to_images(pdf_bytes)
+            await message.answer(
+                f"Документ выглядит как скан ({len(pages)} стр.), "
+                f"использую распознавание изображений..."
+            )
             profile = await Repository.get_user_profile(message.from_user.id)
-            result = await analyze_image(img_bytes, profile)
+            result = await analyze_scanned_pdf_pages(pages, profile)
         else:
             # Truncate to avoid token limits (~30k chars ≈ ~8k tokens)
             text = text[:30_000]
@@ -155,11 +166,30 @@ async def _handle_pdf(message: Message) -> None:
 
             count = await Repository.save_test_results(message.from_user.id, db_results)
             summary = result.get("summary", "Анализ завершён.")[:2000]
+
+            # Highlight out-of-range values
+            abnormal = [
+                r for r in db_results
+                if r.get("ref_max") and r["value"] > r["ref_max"]
+                or r.get("ref_min") and r["value"] < r["ref_min"]
+            ]
+            abnormal_text = ""
+            if abnormal:
+                lines = "\n".join(
+                    f"• {r['metric']}: {r['value']} {r.get('unit') or ''} "
+                    f"(норма {r.get('ref_min','?')}–{r.get('ref_max','?')})"
+                    for r in abnormal
+                )
+                abnormal_text = f"\n\n⚠️ <b>Вне нормы:</b>\n{lines}"
+
             await message.answer(
-                f"✅ Сохранено <b>{count}</b> показателей из «{doc.file_name}».\n\n{summary}"
+                f"✅ Сохранено <b>{count}</b> показателей из «{doc.file_name}».{abnormal_text}\n\n{summary}"
             )
         else:
-            await message.answer("Не удалось извлечь показатели из PDF.")
+            await message.answer(
+                f"Не удалось извлечь показатели из «{doc.file_name}».\n"
+                f"Попробуй отправить скриншоты страниц как фото."
+            )
 
     except Exception as e:
         logger.error("PDF analysis failed: %s", type(e).__name__)

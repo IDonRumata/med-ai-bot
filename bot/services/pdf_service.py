@@ -1,5 +1,6 @@
-import io
 import fitz  # PyMuPDF
+
+MAX_SCAN_PAGES = 10  # Vision API limit per PDF
 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
@@ -17,3 +18,17 @@ def get_pdf_page_count(pdf_bytes: bytes) -> int:
     count = len(doc)
     doc.close()
     return count
+
+
+def pdf_pages_to_images(pdf_bytes: bytes, dpi: int = 180) -> list[bytes]:
+    """Convert all PDF pages to PNG images for Vision API.
+    Limits to MAX_SCAN_PAGES to control cost."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    images = []
+    for i, page in enumerate(doc):
+        if i >= MAX_SCAN_PAGES:
+            break
+        pix = page.get_pixmap(dpi=dpi)
+        images.append(pix.tobytes("png"))
+    doc.close()
+    return images

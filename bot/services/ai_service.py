@@ -209,6 +209,50 @@ async def analyze_image(image_bytes: bytes, user_profile: dict | None = None) ->
     return json.loads(response.choices[0].message.content)
 
 
+async def analyze_scanned_pdf_pages(
+    pages_bytes: list[bytes],
+    user_profile: dict | None = None,
+) -> dict:
+    """Analyze multiple scanned PDF pages in one Vision API call."""
+    import base64
+    _check_rate_limit()
+
+    profile_ctx = ""
+    if user_profile:
+        profile_ctx = f"\nПрофиль: пол {user_profile.get('sex', 'н/д')}, возраст {user_profile.get('age', 'н/д')}."
+
+    content = [
+        {
+            "type": "text",
+            "text": (
+                f"Это страницы одного медицинского документа (скан). "
+                f"Извлеки ВСЕ лабораторные и диагностические показатели со ВСЕХ страниц. "
+                f"Верни JSON: results (массив {{metric, value, unit, ref_min, ref_max, date}}), "
+                f"summary (краткая сводка: что в норме, что ОТКЛОНЕНИЕ — выдели отклонения отдельно).{profile_ctx}"
+            ),
+        }
+    ]
+    for page_bytes in pages_bytes:
+        b64 = base64.b64encode(page_bytes).decode()
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"},
+        })
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model_heavy,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": content},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.1,
+        max_tokens=3000,
+    )
+
+    return json.loads(response.choices[0].message.content)
+
+
 async def generate_doctor_report(
     user_profile: dict,
     symptoms: list[dict],
