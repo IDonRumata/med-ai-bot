@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, BufferedInputFile
 
@@ -14,6 +14,7 @@ router = Router()
 
 
 @router.message(Command("export"))
+@router.message(F.text == "📋 Отчёт для врача")
 async def cmd_export(message: Message) -> None:
     user_id = message.from_user.id
     await message.answer("📋 Формирую отчёт для врача...")

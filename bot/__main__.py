@@ -4,6 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand
 
 from bot.config import settings
 from bot.database.engine import init_db
@@ -34,6 +35,15 @@ async def main() -> None:
     dp.include_router(symptoms.router)
     dp.include_router(trends.router)
     dp.include_router(export.router)
+
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="profile", description="Мой профиль"),
+        BotCommand(command="metrics", description="Список показателей"),
+        BotCommand(command="trend", description="График динамики показателя"),
+        BotCommand(command="export", description="Отчёт для врача"),
+        BotCommand(command="help", description="Справка"),
+    ])
 
     await start_scheduler(bot)
     logger.info("Bot started")
