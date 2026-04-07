@@ -61,4 +61,19 @@ if [[ $BACKUP_COUNT -gt $MAX_BACKUPS ]]; then
     echo "[$(date)] Old backups rotated, keeping last $MAX_BACKUPS"
 fi
 
+# Send backup to Telegram
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${ALLOWED_USER_ID:-}" ]]; then
+    CAPTION="🗄 Резервная копия базы данных%0A📅 $(date '+%d.%m.%Y %H:%M')%0A💾 $SIZE"
+    SEND_RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
+        -F "chat_id=${ALLOWED_USER_ID}" \
+        -F "document=@${BACKUP_FILE}" \
+        -F "caption=${CAPTION}" \
+        "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument")
+    if [[ "$SEND_RESULT" == "200" ]]; then
+        echo "[$(date)] Backup sent to Telegram ✓"
+    else
+        echo "[$(date)] WARNING: Telegram send failed (HTTP $SEND_RESULT)"
+    fi
+fi
+
 echo "[$(date)] Done."
