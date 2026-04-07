@@ -13,11 +13,21 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    age: Mapped[int | None]
+    date_of_birth: Mapped[date | None] = mapped_column(Date)
     sex: Mapped[str | None] = mapped_column(String(10))
+    height_cm: Mapped[float | None] = mapped_column(Float)
+    weight_kg: Mapped[float | None] = mapped_column(Float)
     chronic_conditions: Mapped[str | None] = mapped_column(Text)  # encrypted
     allergies: Mapped[str | None] = mapped_column(Text)  # encrypted
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    @property
+    def age(self) -> int | None:
+        if not self.date_of_birth:
+            return None
+        today = date.today()
+        dob = self.date_of_birth
+        return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
     test_results: Mapped[list["TestResult"]] = relationship(back_populates="user")
     symptom_logs: Mapped[list["SymptomLog"]] = relationship(back_populates="user")

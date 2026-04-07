@@ -59,9 +59,15 @@ async def analyze_symptoms(
     """Analyze new complaint in context of recent health data."""
     profile_ctx = ""
     if user_profile:
+        bmi_str = ""
+        h = user_profile.get("height_cm")
+        w = user_profile.get("weight_kg")
+        if h and w:
+            bmi = w / (h / 100) ** 2
+            bmi_str = f", рост {h:.0f} см, вес {w:.1f} кг, ИМТ {bmi:.1f}"
         profile_ctx = (
             f"Профиль: пол {user_profile.get('sex', 'н/д')}, "
-            f"возраст {user_profile.get('age', 'н/д')}, "
+            f"возраст {user_profile.get('age', 'н/д')}{bmi_str}, "
             f"хронические: {user_profile.get('chronic_conditions', 'нет')}, "
             f"аллергии: {user_profile.get('allergies', 'нет')}."
         )

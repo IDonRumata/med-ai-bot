@@ -21,17 +21,26 @@ class Repository:
 
     @staticmethod
     async def update_user_profile(
-        user_id: int, age: int | None = None, sex: str | None = None,
-        chronic: str | None = None, allergies: str | None = None,
+        user_id: int,
+        date_of_birth: date | None = None,
+        sex: str | None = None,
+        height_cm: float | None = None,
+        weight_kg: float | None = None,
+        chronic: str | None = None,
+        allergies: str | None = None,
     ) -> None:
         async with async_session() as session:
             user = await session.get(User, user_id)
             if not user:
                 return
-            if age is not None:
-                user.age = age
+            if date_of_birth is not None:
+                user.date_of_birth = date_of_birth
             if sex is not None:
                 user.sex = sex
+            if height_cm is not None:
+                user.height_cm = height_cm
+            if weight_kg is not None:
+                user.weight_kg = weight_kg
             if chronic is not None:
                 user.chronic_conditions = encrypt(chronic)
             if allergies is not None:
@@ -176,8 +185,11 @@ class Repository:
             if not user:
                 return None
             return {
-                "age": user.age,
+                "age": user.age,  # computed property from date_of_birth
+                "date_of_birth": user.date_of_birth.isoformat() if user.date_of_birth else None,
                 "sex": user.sex,
+                "height_cm": user.height_cm,
+                "weight_kg": user.weight_kg,
                 "chronic_conditions": decrypt(user.chronic_conditions) if user.chronic_conditions else None,
                 "allergies": decrypt(user.allergies) if user.allergies else None,
             }

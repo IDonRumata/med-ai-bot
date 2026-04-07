@@ -30,8 +30,10 @@ MAIN_MENU = ReplyKeyboardMarkup(
 
 
 class ProfileSetup(StatesGroup):
-    age = State()
+    dob = State()
     sex = State()
+    height = State()
+    weight = State()
     chronic = State()
     allergies = State()
 
@@ -68,24 +70,34 @@ async def cmd_help(message: Message) -> None:
 @router.message(Command("profile"))
 @router.message(F.text == "👤 Профиль")
 async def cmd_profile(message: Message, state: FSMContext) -> None:
-    await state.set_state(ProfileSetup.age)
+    await state.set_state(ProfileSetup.dob)
     await message.answer(
-        "Укажи свой возраст (число):",
+        "Укажи дату рождения в формате ДД.ММ.ГГГГ\n<i>Например: 27.06.1981</i>",
         reply_markup=ReplyKeyboardRemove(),
     )
 
 
-@router.message(ProfileSetup.age)
-async def process_age(message: Message, state: FSMContext) -> None:
+@router.message(ProfileSetup.dob)
+async def process_dob(message: Message, state: FSMContext) -> None:
+    from datetime import date as date_type
+    text = message.text.strip()
     try:
-        age = int(message.text.strip())
-        if not 1 <= age <= 120:
+        parts = text.replace("-", ".").replace("/", ".").split(".")
+        if len(parts) == 3:
+            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+            dob = date_type(y, m, d)
+            age = date_type.today().year - dob.year - (
+                (date_type.today().month, date_type.today().day) < (dob.month, dob.day)
+            )
+            if not 1 <= age <= 120:
+                raise ValueError
+        else:
             raise ValueError
     except (ValueError, TypeError):
-        await message.answer("Введи корректный возраст (число от 1 до 120):")
+        await message.answer("Неверный формат. Введи дату как ДД.ММ.ГГГГ, например: 27.06.1981")
         return
 
-    await state.update_data(age=age)
+    await state.update_data(dob=dob.isoformat())
     await state.set_state(ProfileSetup.sex)
 
     sex_kb = ReplyKeyboardMarkup(
@@ -105,6 +117,39 @@ async def process_sex(message: Message, state: FSMContext) -> None:
 
     sex_normalized = "М" if sex in ("М", "M") else "Ж"
     await state.update_data(sex=sex_normalized)
+    await state.set_state(ProfileSetup.height)
+    await message.answer(
+        "Рост в сантиметрах (число):\n<i>Например: 178</i>",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.message(ProfileSetup.height)
+async def process_height(message: Message, state: FSMContext) -> None:
+    try:
+        h = float(message.text.strip().replace(",", "."))
+        if not 50 <= h <= 250:
+            raise ValueError
+    except (ValueError, TypeError):
+        await message.answer("Введи рост числом в сантиметрах (например: 178):")
+        return
+
+    await state.update_data(height=h)
+    await state.set_state(ProfileSetup.weight)
+    await message.answer("Вес в килограммах (число):\n<i>Например: 82.5</i>")
+
+
+@router.message(ProfileSetup.weight)
+async def process_weight(message: Message, state: FSMContext) -> None:
+    try:
+        w = float(message.text.strip().replace(",", "."))
+        if not 20 <= w <= 300:
+            raise ValueError
+    except (ValueError, TypeError):
+        await message.answer("Введи вес числом в килограммах (например: 82.5):")
+        return
+
+    await state.update_data(weight=w)
     await state.set_state(ProfileSetup.chronic)
     await message.answer(
         "Хронические заболевания (или напиши «нет»):",
@@ -132,16 +177,34 @@ async def process_chronic(message: Message, state: FSMContext) -> None:
 
 @router.message(ProfileSetup.allergies)
 async def process_allergies(message: Message, state: FSMContext) -> None:
+    from datetime import date as date_type
     data = await state.get_data()
     await Repository.update_user_profile(
         user_id=message.from_user.id,
-        age=data["age"],
+        date_of_birth=date_type.fromisoformat(data["dob"]),
         sex=data["sex"],
+        height_cm=data["height"],
+        weight_kg=data["weight"],
         chronic=data["chronic"],
         allergies=message.text.strip(),
     )
     await state.clear()
-    await message.answer("✅ Профиль сохранён!", reply_markup=MAIN_MENU)
+
+    dob = date_type.fromisoformat(data["dob"])
+    age = date_type.today().year - dob.year - (
+        (date_type.today().month, date_type.today().day) < (dob.month, dob.day)
+    )
+    bmi = data["weight"] / (data["height"] / 100) ** 2
+
+    await message.answer(
+        f"✅ <b>Профиль сохранён!</b>\n\n"
+        f"📅 Дата рождения: {dob.strftime('%d.%m.%Y')} ({age} лет)\n"
+        f"⚧ Пол: {data['sex']}\n"
+        f"📏 Рост: {data['height']:.0f} см\n"
+        f"⚖️ Вес: {data['weight']:.1f} кг\n"
+        f"🔢 ИМТ: {bmi:.1f}",
+        reply_markup=MAIN_MENU,
+    )
 
 
 @router.message(Command("metrics"))
