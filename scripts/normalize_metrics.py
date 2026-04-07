@@ -1,11 +1,15 @@
 """
 One-time script to normalize duplicate metric names in the database.
-Run: docker-compose exec bot python scripts/normalize_metrics.py
+Run: docker-compose exec bot python -m scripts.normalize_metrics
 """
+import sys
+import os
+sys.path.insert(0, "/app")
+
 import asyncio
 import re
 from sqlalchemy import text
-from bot.database.connection import get_engine
+from bot.database.engine import async_session
 
 # Mapping: old name pattern (regex) → canonical name
 NORMALIZATIONS = [
@@ -74,10 +78,10 @@ def canonical(name: str) -> str | None:
 
 
 async def main():
-    engine = get_engine()
-    async with engine.connect() as conn:
-        # Fetch all distinct metric names
-        result = await conn.execute(text("SELECT DISTINCT metric_name FROM test_results ORDER BY metric_name"))
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT DISTINCT metric_name FROM test_results ORDER BY metric_name")
+        )
         metrics = [row[0] for row in result.fetchall()]
 
     print(f"Total distinct metrics: {len(metrics)}")
@@ -86,7 +90,7 @@ async def main():
         c = canonical(m)
         if c and c != m:
             renames[m] = c
-            print(f"  RENAME: {m!r} → {c!r}")
+            print(f"  RENAME: {m!r} -> {c!r}")
 
     if not renames:
         print("Nothing to rename.")
@@ -97,10 +101,9 @@ async def main():
         print("Aborted.")
         return
 
-    async with engine.begin() as conn:
+    async with async_session() as session:
         for old, new in renames.items():
-            # Move all rows with old name to new name, keeping latest if conflict
-            await conn.execute(
+            await session.execute(
                 text("""
                     UPDATE test_results SET metric_name = :new
                     WHERE metric_name = :old
@@ -113,11 +116,11 @@ async def main():
                 """),
                 {"old": old, "new": new}
             )
-            # Delete remaining duplicates (same user/date already has the canonical)
-            await conn.execute(
+            await session.execute(
                 text("DELETE FROM test_results WHERE metric_name = :old"),
                 {"old": old}
             )
+        await session.commit()
     print("Done.")
 
 
