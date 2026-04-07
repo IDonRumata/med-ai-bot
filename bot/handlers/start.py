@@ -21,6 +21,7 @@ MAIN_MENU = ReplyKeyboardMarkup(
             KeyboardButton(text="👤 Профиль"),
         ],
         [
+            KeyboardButton(text="🏥 Медкарта"),
             KeyboardButton(text="❓ Помощь"),
         ],
     ],
@@ -59,12 +60,119 @@ async def cmd_help(message: Message) -> None:
         "📊 <b>Мои показатели</b> — список всех сохранённых метрик\n"
         "📈 <b>Тренд</b> — график динамики показателя\n"
         "📋 <b>Отчёт для врача</b> — структурированный отчёт\n"
-        "👤 <b>Профиль</b> — возраст, пол, хронические, аллергии\n\n"
+        "🏥 <b>Медкарта</b> — полный профиль + хронические + аллергии\n"
+        "👤 <b>Профиль</b> — обновить личные данные\n\n"
         "<b>Отправка данных:</b>\n"
         "📄 PDF/фото анализов → извлечение и сохранение показателей\n"
-        "🎤 Голосовое / текст → логирование жалоб и анализ",
+        "🎤 Голосовое / текст → логирование жалоб и анализ\n\n"
+        "<b>Доп. команды:</b>\n"
+        "/addchronic — добавить хроническое заболевание\n"
+        "/addallergy — добавить аллергию",
         reply_markup=MAIN_MENU,
     )
+
+
+@router.message(Command("card"))
+@router.message(F.text == "🏥 Медкарта")
+async def cmd_card(message: Message) -> None:
+    from datetime import date as date_type
+    user_id = message.from_user.id
+    profile = await Repository.get_user_profile(user_id)
+
+    if not profile:
+        await message.answer(
+            "Профиль не заполнен. Нажми 👤 Профиль чтобы внести данные.",
+            reply_markup=MAIN_MENU,
+        )
+        return
+
+    age = profile.get("age", "—")
+    sex = profile.get("sex") or "—"
+    height = profile.get("height_cm")
+    weight = profile.get("weight_kg")
+    chronic = profile.get("chronic_conditions") or "не указаны"
+    allergies = profile.get("allergies") or "не указаны"
+    dob_iso = profile.get("date_of_birth")
+
+    bmi_str = ""
+    if height and weight:
+        bmi = weight / (height / 100) ** 2
+        category = (
+            "недостаточный вес" if bmi < 18.5
+            else "норма" if bmi < 25
+            else "избыточный вес" if bmi < 30
+            else "ожирение"
+        )
+        bmi_str = f"\n🔢 ИМТ: {bmi:.1f} ({category})"
+
+    if dob_iso:
+        from datetime import date as date_type
+        dob = date_type.fromisoformat(dob_iso)
+        dob_str = dob.strftime("%d.%m.%Y")
+    else:
+        dob_str = "—"
+
+    metrics_count = len(await Repository.get_all_metrics(user_id))
+
+    text = (
+        f"🏥 <b>Медицинская карта</b>\n\n"
+        f"📅 Дата рождения: {dob_str}\n"
+        f"🎂 Возраст: {age} лет\n"
+        f"⚧ Пол: {sex}\n"
+        f"📏 Рост: {f'{height:.0f} см' if height else '—'}\n"
+        f"⚖️ Вес: {f'{weight:.1f} кг' if weight else '—'}"
+        f"{bmi_str}\n\n"
+        f"🩺 <b>Хронические заболевания:</b>\n{chronic}\n\n"
+        f"⚠️ <b>Аллергии:</b>\n{allergies}\n\n"
+        f"📊 Показателей в базе: {metrics_count}"
+    )
+    await message.answer(text, reply_markup=MAIN_MENU)
+
+
+@router.message(Command("addchronic"))
+async def cmd_addchronic(message: Message) -> None:
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(
+            "Укажи заболевание после команды:\n<code>/addchronic Гипотиреоз</code>"
+        )
+        return
+
+    addition = args[1].strip()[:500]
+    user_id = message.from_user.id
+    profile = await Repository.get_user_profile(user_id)
+    existing = (profile or {}).get("chronic_conditions") or ""
+
+    if existing and existing.lower() != "нет":
+        new_value = existing.rstrip(", ") + ", " + addition
+    else:
+        new_value = addition
+
+    await Repository.update_user_profile(user_id, chronic=new_value)
+    await message.answer(f"✅ Добавлено: <b>{addition}</b>\n\nТекущий список: {new_value}")
+
+
+@router.message(Command("addallergy"))
+async def cmd_addallergy(message: Message) -> None:
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(
+            "Укажи аллергию после команды:\n<code>/addallergy Пенициллин</code>"
+        )
+        return
+
+    addition = args[1].strip()[:500]
+    user_id = message.from_user.id
+    profile = await Repository.get_user_profile(user_id)
+    existing = (profile or {}).get("allergies") or ""
+
+    if existing and existing.lower() != "нет":
+        new_value = existing.rstrip(", ") + ", " + addition
+    else:
+        new_value = addition
+
+    await Repository.update_user_profile(user_id, allergies=new_value)
+    await message.answer(f"✅ Добавлено: <b>{addition}</b>\n\nТекущий список: {new_value}")
 
 
 @router.message(Command("profile"))
