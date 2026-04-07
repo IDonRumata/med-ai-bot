@@ -33,12 +33,25 @@ async def handle_voice(message: Message) -> None:
         )
 
 
+MAX_COMPLAINT_LEN = 3000  # ~750 tokens, enough for any complaint
+
+_BUTTON_TEXTS = {"📊 Мои показатели", "📈 Тренд", "📋 Отчёт для врача", "👤 Профиль", "❓ Помощь"}
+
+
 @router.message(F.text)
 async def handle_text(message: Message) -> None:
-    if message.text.startswith("/"):
-        return  # skip commands handled by other routers
+    text = message.text
+    if text.startswith("/") or text in _BUTTON_TEXTS:
+        return  # handled by other routers
 
-    await _process_complaint(message, message.text)
+    if len(text) > MAX_COMPLAINT_LEN:
+        await message.answer(
+            f"Сообщение слишком длинное (макс. {MAX_COMPLAINT_LEN} символов). "
+            f"Опиши жалобу короче."
+        )
+        return
+
+    await _process_complaint(message, text)
 
 
 async def _process_complaint(message: Message, complaint_text: str) -> None:
@@ -88,8 +101,19 @@ async def _process_complaint(message: Message, complaint_text: str) -> None:
 
         await message.answer(f"📋 <b>Анализ:</b>\n\n{assessment}")
 
+    except RuntimeError as e:
+        if str(e).startswith("RATE_LIMIT:"):
+            wait = str(e).split(":")[1]
+            await message.answer(
+                f"⏳ Достигнут лимит запросов к ИИ. Повтори через {int(wait)//60 or 1} мин."
+            )
+        else:
+            logger.error("Symptom analysis failed: %s", type(e).__name__)
+            await message.answer(
+                "⚠️ Произошла ошибка связи с сервером анализа. Повторите запрос через 5 минут."
+            )
     except Exception as e:
-        logger.error("Symptom analysis failed: %s", e, exc_info=True)
+        logger.error("Symptom analysis failed: %s", type(e).__name__)
         await message.answer(
             "⚠️ Произошла ошибка связи с сервером анализа. Повторите запрос через 5 минут."
         )

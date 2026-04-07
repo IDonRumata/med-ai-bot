@@ -65,6 +65,7 @@ async def start_scheduler(bot: Bot) -> None:
         "cron",
         hour=10,
         minute=0,
+        timezone=settings.tz,  # uses TZ from .env (Europe/Minsk)
         args=[bot],
         id="daily_health_check",
         replace_existing=True,

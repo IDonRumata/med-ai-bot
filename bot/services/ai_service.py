@@ -4,10 +4,17 @@ from openai import AsyncOpenAI
 
 from bot.config import settings
 from bot.services.anonymizer import anonymize
+from bot.utils.rate_limiter import ai_limiter
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(api_key=settings.openai_api_key)
+client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=60.0)
+
+
+def _check_rate_limit() -> None:
+    if not ai_limiter.is_allowed():
+        wait = ai_limiter.seconds_until_reset()
+        raise RuntimeError(f"RATE_LIMIT:{wait}")
 
 SYSTEM_PROMPT = (
     "Ты — медицинский ИИ-аналитик. Ты помогаешь пользователю отслеживать его здоровье. "
@@ -18,11 +25,21 @@ SYSTEM_PROMPT = (
 )
 
 
+def _safe(text: str, max_len: int = 500) -> str:
+    """Truncate and strip prompt-injection attempts from user-controlled strings."""
+    if not text:
+        return ""
+    # Remove common injection patterns
+    cleaned = text.replace("ignore previous", "").replace("forget instructions", "")
+    return cleaned[:max_len]
+
+
 async def analyze_test_results(
     extracted_text: str,
     user_profile: dict | None = None,
 ) -> dict:
     """Parse lab results from extracted text. Returns structured JSON."""
+    _check_rate_limit()
     profile_ctx = ""
     if user_profile:
         profile_ctx = f"\nПрофиль пациента: пол {user_profile.get('sex', 'не указан')}, возраст {user_profile.get('age', 'не указан')}."
@@ -57,6 +74,7 @@ async def analyze_symptoms(
     user_profile: dict | None = None,
 ) -> str:
     """Analyze new complaint in context of recent health data."""
+    _check_rate_limit()
     profile_ctx = ""
     if user_profile:
         bmi_str = ""
@@ -68,8 +86,8 @@ async def analyze_symptoms(
         profile_ctx = (
             f"Профиль: пол {user_profile.get('sex', 'н/д')}, "
             f"возраст {user_profile.get('age', 'н/д')}{bmi_str}, "
-            f"хронические: {user_profile.get('chronic_conditions', 'нет')}, "
-            f"аллергии: {user_profile.get('allergies', 'нет')}."
+            f"хронические: {_safe(user_profile.get('chronic_conditions') or 'нет')}, "
+            f"аллергии: {_safe(user_profile.get('allergies') or 'нет')}."
         )
 
     symptoms_ctx = ""
