@@ -35,7 +35,27 @@ async def handle_voice(message: Message) -> None:
 
 MAX_COMPLAINT_LEN = 3000  # ~750 tokens, enough for any complaint
 
-_BUTTON_TEXTS = {"📊 Мои показатели", "📈 Тренд", "📋 Отчёт для врача", "👤 Профиль", "❓ Помощь"}
+_BUTTON_TEXTS = {
+    "📊 Мои показатели", "📈 Тренд", "📋 Отчёт для врача",
+    "👤 Профиль", "❓ Помощь", "🏥 Медкарта",
+}
+
+# Short phrases that update profile data but aren't medical complaints
+import re as _re
+_PROFILE_UPDATE_PATTERNS = [
+    _re.compile(r"(?i)^(мой\s+)?(вес|рост|возраст|мне)\s+\d+", _re.UNICODE),
+    _re.compile(r"(?i)^\d+\s*(кг|kg|см|cm|лет|г\.?\s*р\.?)\.?$", _re.UNICODE),
+    _re.compile(r"(?i)^(нет|да|м|ж|мужской|женский)$", _re.UNICODE),
+]
+
+MIN_COMPLAINT_LEN = 10  # ignore very short messages
+
+
+def _is_profile_update(text: str) -> bool:
+    text = text.strip()
+    if len(text) < MIN_COMPLAINT_LEN:
+        return True
+    return any(p.match(text) for p in _PROFILE_UPDATE_PATTERNS)
 
 
 @router.message(F.text)
@@ -43,6 +63,9 @@ async def handle_text(message: Message) -> None:
     text = message.text
     if text.startswith("/") or text in _BUTTON_TEXTS:
         return  # handled by other routers
+
+    if _is_profile_update(text):
+        return  # silently ignore profile-like short inputs
 
     if len(text) > MAX_COMPLAINT_LEN:
         await message.answer(
