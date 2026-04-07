@@ -21,8 +21,20 @@ SYSTEM_PROMPT = (
     "Ты не ставишь диагнозы и не заменяешь врача, но анализируешь тренды, "
     "указываешь на отклонения от нормы и рекомендуешь обратиться к конкретному специалисту. "
     "Отвечай на русском языке. Будь точным и структурированным. "
-    "Если данных недостаточно — скажи об этом прямо."
+    "Если данных недостаточно — скажи об этом прямо. "
+    "ВАЖНО: не используй markdown-разметку (никаких **, *, ##, _). "
+    "Используй только обычный текст и цифровые списки (1. 2. 3.)."
 )
+
+
+def _clean(text: str) -> str:
+    """Strip markdown symbols that render as literal characters in Telegram HTML mode."""
+    import re
+    text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)   # **bold** → bold
+    text = re.sub(r'_{1,2}(.+?)_{1,2}', r'\1', text)      # _italic_ → italic
+    text = re.sub(r'#{1,6}\s*', '', text)                  # ## headers → text
+    text = re.sub(r'`{1,3}(.+?)`{1,3}', r'\1', text)      # `code` → code
+    return text.strip()
 
 
 def _safe(text: str, max_len: int = 500) -> str:
@@ -121,7 +133,7 @@ async def analyze_symptoms(
         max_tokens=1500,
     )
 
-    return response.choices[0].message.content
+    return _clean(response.choices[0].message.content)
 
 
 async def analyze_trend(
@@ -155,7 +167,7 @@ async def analyze_trend(
         max_tokens=800,
     )
 
-    return response.choices[0].message.content
+    return _clean(response.choices[0].message.content)
 
 
 async def analyze_image(image_bytes: bytes, user_profile: dict | None = None) -> dict:
@@ -230,4 +242,4 @@ async def generate_doctor_report(
         max_tokens=3000,
     )
 
-    return response.choices[0].message.content
+    return _clean(response.choices[0].message.content)
