@@ -1,9 +1,8 @@
 """
 One-time script to normalize duplicate metric names in the database.
-Run: docker-compose exec bot python -m scripts.normalize_metrics
+Run: docker-compose exec bot python scripts/normalize_metrics.py
 """
 import sys
-import os
 sys.path.insert(0, "/app")
 
 import asyncio
@@ -11,69 +10,52 @@ import re
 from sqlalchemy import text
 from bot.database.engine import async_session
 
-# Mapping: old name pattern (regex) → canonical name
-NORMALIZATIONS = [
-    # TSH
-    (r"(?i)тиреотропный гормон.*|ТТГ.*\(ТТГ\).*", "ТТГ"),
-    # SOE
-    (r"(?i)СОЭ по Вестергрену.*|СОЭ/.*", "СОЭ"),
-    # Iron
-    (r"(?i)Сывороточное железо.*|Железо сыворотки.*", "Железо"),
-    # Neutrophils absolute
-    (r"(?i)Нейтрофилы абс\.?\s*[/#].*|Нейтрофилы абс\. количество[/#].*", "Нейтрофилы абс."),
-    # Neutrophils %
-    (r"(?i)Нейтрофилы[/%].*", "Нейтрофилы %"),
-    # Eosinophils absolute
-    (r"(?i)Эозинофилы абс\.?\s*[/#].*|Эозинофилы абс\. количество[/#].*", "Эозинофилы абс."),
-    # Eosinophils %
-    (r"(?i)Эозинофилы[/%].*", "Эозинофилы %"),
-    # Basophils
-    (r"(?i)Базофилы абс\.?\s*[/#].*", "Базофилы абс."),
-    (r"(?i)Базофилы[/%].*", "Базофилы %"),
-    # Lymphocytes
-    (r"(?i)Лимфоциты абс\.?\s*[/#].*", "Лимфоциты абс."),
-    (r"(?i)Лимфоциты[/%].*", "Лимфоциты %"),
-    # Monocytes
-    (r"(?i)Моноциты абс\.?\s*[/#].*", "Моноциты абс."),
-    (r"(?i)Моноциты[/%].*", "Моноциты %"),
-    # MCV
-    (r"(?i)Средн\.?\s*(объем|конц\.).*эритроцит.*/(MCV|MCH|MCHC).*|Средний объем эритроцита/.*",
-     None),  # handle below
-    # Cholesterol
-    (r"(?i)Холестерин\s*/\s*Cholesterol.*|Холестерин общий.*", "Холестерин"),
-    # Triglycerides
-    (r"(?i)Триглицериды\s*/\s*Triglyceride.*", "Триглицериды"),
-    # Alkaline phosphatase
-    (r"(?i)Щелочная фосфатаза\s*/\s*ALP.*", "ЩФ"),
-    # Total protein
-    (r"(?i)Общий белок\s*/\s*Total Protein.*", "Общий белок"),
-    # Calcium
-    (r"(?i)Общий кальций\s*/\s*Total calcium.*", "Кальций"),
-    # Phosphate
-    (r"(?i)Неорганический фосфат\s*/\s*Inorganic phosphate.*", "Фосфат"),
-    # Free T4
-    (r"(?i)Свободный Т4|Свободный T4", "Т4 свободный"),
-    # FSH
-    (r"(?i)Фолликулостимулирующий гормон.*|ФСГ.*", "ФСГ"),
-    # Carotid arteries — keep as is but strip duplicates
+# Explicit mappings: regex pattern → canonical name
+EXPLICIT = [
+    (r"(?i)тиреотропный гормон.*", "ТТГ"),
+    (r"(?i)СОЭ по Вестергрену.*|СОЭ[/\\].*", "СОЭ"),
+    (r"(?i)сывороточное железо.*", "Железо"),
+    (r"(?i)нейтрофилы абс\.?\s*(количество)?[/#%].*", "Нейтрофилы абс."),
+    (r"(?i)нейтрофилы\s*[/%].*", "Нейтрофилы %"),
+    (r"(?i)эозинофилы абс\.?\s*(количество)?[/#%].*", "Эозинофилы абс."),
+    (r"(?i)эозинофилы\s*[/%].*", "Эозинофилы %"),
+    (r"(?i)базофилы абс\.?\s*(количество)?[/#%].*", "Базофилы абс."),
+    (r"(?i)базофилы\s*[/%].*", "Базофилы %"),
+    (r"(?i)лимфоциты абс\.?\s*(количество)?[/#%].*", "Лимфоциты абс."),
+    (r"(?i)лимфоциты\s*[/%].*", "Лимфоциты %"),
+    (r"(?i)моноциты абс\.?\s*(количество)?[/#%].*", "Моноциты абс."),
+    (r"(?i)моноциты\s*[/%].*", "Моноциты %"),
+    (r"(?i)средн\.?\s*объем эритроцитов?.*|средний объем эритроцита.*", "MCV"),
+    (r"(?i)средн\.?\s*конц\. гемоглобина.*", "MCHC"),
+    (r"(?i)средн\.?\s*содерж\. гемоглобина.*", "MCH"),
+    (r"(?i)ширина распределения эритроцитов.*", "RDW"),
+    (r"(?i)фолликулостимулирующий гормон.*", "ФСГ"),
+    (r"(?i)лютеинизирующий гормон.*", "ЛГ"),
+    (r"(?i)свободный [тt]4", "Т4 свободный"),
+    (r"(?i)глюкоза сыворотки.*", "Глюкоза"),
+    (r"(?i)кальций ионизированный расчетный.*", "Кальций ионизированный"),
+    (r"(?i)общий кальций.*", "Кальций"),
+    (r"(?i)неорганический фосфат.*", "Фосфат"),
+    (r"(?i)мочевая кислота\s*/.*", "Мочевая кислота"),
+    (r"(?i)билирубин общий\s*/.*", "Билирубин общий"),
+    (r"(?i)билирубин прямой\s*/.*", "Билирубин прямой"),
 ]
 
-# Specific MCV/MCH/MCHC mappings
-SPECIFIC = {
-    r"(?i)Средн\.?\s*объем эритроцитов?/(MCV).*|Средний объем эритроцита/MCV.*": "MCV",
-    r"(?i)Средн\.?\s*конц\. гемоглобина.*/(MCHC).*": "MCHC",
-    r"(?i)Средн\.?\s*содерж\. гемоглобина.*/(MCH).*": "MCH",
-    r"(?i)Ширина распределения эритроцитов.*/(RDW).*": "RDW",
-}
+# Generic strip: "Русское название / Latin name" → "Русское название"
+SLASH_STRIP = re.compile(r"^(.+?)\s*/\s*[A-Za-zА-Яα-ωΑ-Ω].+$")
 
 
 def canonical(name: str) -> str | None:
-    for pattern, canon in SPECIFIC.items():
+    # Explicit rules first
+    for pattern, canon in EXPLICIT:
         if re.match(pattern, name):
-            return canon
-    for pattern, canon in NORMALIZATIONS:
-        if canon is not None and re.match(pattern, name):
-            return canon
+            return canon if canon != name else None
+    # Generic: strip " / Latin" suffix
+    m = SLASH_STRIP.match(name)
+    if m:
+        stripped = m.group(1).strip()
+        if stripped != name:
+            return stripped
     return None
 
 
@@ -103,6 +85,7 @@ async def main():
 
     async with async_session() as session:
         for old, new in renames.items():
+            # Update rows that don't conflict with existing canonical entry
             await session.execute(
                 text("""
                     UPDATE test_results SET metric_name = :new
@@ -116,6 +99,7 @@ async def main():
                 """),
                 {"old": old, "new": new}
             )
+            # Delete remaining old-name rows (duplicates on same user+date)
             await session.execute(
                 text("DELETE FROM test_results WHERE metric_name = :old"),
                 {"old": old}
